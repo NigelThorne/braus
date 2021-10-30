@@ -15,14 +15,22 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-from gi.repository import Gtk, Gio, GLib, Pango, Gdk
+from gi.repository import Gtk, Gio, GLib, Pango, Gdk, GdkPixbuf
 import sys
+import configparser
+import os
+import glob
+import json
+from urllib.parse import urlparse
 
 class BrausWindow(Gtk.ApplicationWindow):
     __gtype_name__ = 'BrausWindow'
 
     def __init__(self, app):
         super().__init__(title="Braus", application=app)
+        
+        self.thisapp = app
+        self.loadConfig(None)
 
         # Set it to open in center
         self.set_position(Gtk.WindowPosition.CENTER_ALWAYS)
@@ -104,7 +112,6 @@ class BrausWindow(Gtk.ApplicationWindow):
             Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
         )
 
-
         #Create headerbar and add to window as titlebar
         hb = Gtk.HeaderBar()
         hb.set_show_close_button(True)
@@ -119,6 +126,7 @@ class BrausWindow(Gtk.ApplicationWindow):
         entry.set_icon_from_icon_name(Gtk.EntryIconPosition.PRIMARY, "system-search-symbolic")
         try:
             entry.set_text(sys.argv[1])
+            print("Url %s" % sys.argv[1])
         except IndexError:
             print("No url provided")
 
@@ -155,7 +163,6 @@ class BrausWindow(Gtk.ApplicationWindow):
 
         self.add(outerbox)
 
-
         # create a horizontal box to hold browser buttons
         hbox = Gtk.Box()
         hbox.set_name("mainbox")
@@ -180,76 +187,144 @@ class BrausWindow(Gtk.ApplicationWindow):
         
         infobar.add_action_widget(infobuttonnever, Gtk.ResponseType.REJECT)
         infobar.add_button (_("Set as Default"), Gtk.ResponseType.ACCEPT)
-        
-        
-
-        if app.settings.get_boolean("ask-default") == True or (Gio.AppInfo.get_default_for_type(app.content_types[1], True).get_id() != Gio.Application.get_application_id(app) + '.desktop') :
+                
+        if (app.settings.get_boolean("ask-default") != False) and (self.is_default_already() == False) :
             outerbox.add(infobar)
-        
 
         # Get all apps which are registered as browsers
         browsers = Gio.AppInfo.get_all_for_type(app.content_types[1])
 
         # The Gio.AppInfo.launch_uris method takes a list object, so let's make a list and put our url in there
-        uris = []
-        uris.append(entry.get_text())
-
-        #create an empty dict to use later
-        appslist = {}
+        url = entry.get_text()
 
         # Loop over the apps in the list of browsers
         for browser in browsers:
 
-            #print(Gio.Application.get_application_id(app))
-            #print(browser.get_id())
-
             # Remove Braus from the list of browsers
-            if Gio.Application.get_application_id(app) + '.desktop' == browser.get_id() :
+            if self.is_braus(browser) :
                 continue
-            
 
             #put the current one in the loop, in a dict
-            appslist.update({browser.get_id() : browser})
-
-            #Get the icon and label, and put them in a button
-            try:
-                icon = Gtk.Image.new_from_gicon(browser.get_icon(), Gtk.IconSize.DIALOG)
-            except:
-                icon = Gtk.Image.new_from_icon_name('applications-internet', Gtk.IconSize.DIALOG)
-
-            icon.set_name("browsericon")
-            label= Gtk.Label.new(browser.get_display_name())
-            label.set_max_width_chars(10)
-            label.set_width_chars(10)
-            label.set_line_wrap(True)
-            label.set_ellipsize(Pango.EllipsizeMode.END)
-            label.set_justify(Gtk.Justification.LEFT)
-
-            #Every button has a vertical Gtk.Box inside
-            vbox = Gtk.Box()
-            vbox.set_orientation(Gtk.Orientation.VERTICAL)
-            vbox.set_spacing(0)
-
-            vbox.pack_start(icon,True, True, 0)
-            vbox.pack_start(label,True, True, 0)
-
-            button = Gtk.Button()
-
-            button.add(vbox)
+            display_name = browser.get_display_name()
 
             # Add our button to the horizontal box we made earlier
-            hbox.pack_end(button, True, True, 0)
+            self.add_launcher(url, browser, display_name, hbox)
+            if( self.is_chrome(browser) ):
+                for (name, profile) in self.list_chrome_profiles():
+                    self.add_launcher(url, browser, name, hbox, profile)
 
-            #Connect the click signal, passing on all relevant data(browser and url)
-            button.connect("clicked", self.launch_browser, appslist.get(browser.get_id()), uris, app)
+    def mapped_url(self, url):
+        domain = urlparse(url).netloc
+        setting = self._getValue(domain)
+        if(setting != None ):
+            redirect = setting.get("redirect", None) 
+            if(redirect != None):
+                return url.replace(domain, redirect)
+        return url
 
+    def is_saved_action(self, url, browser, profile):
+        domain = urlparse(url).netloc
+        setting = self._getValue(domain)
+        if(setting == None): 
+            return False
+        return setting.get('profile',None) == profile and \
+                setting['browserId'] == browser.get_id()
 
+    # linux only
+    def list_chrome_profiles(self):
+        profiles= list(map(
+            self.read_chrome_preference, 
+            glob.glob(
+                os.path.join(
+                    os.path.expanduser("~"),".config","google-chrome", "*", "Preferences"))))
+        print(profiles)
+        return profiles
+
+    def chrome_profile_image_filename(self, profile):
+        if (profile == None):
+            return None
+        found = glob.glob(os.path.join(os.path.expanduser("~"),
+            ".config","google-chrome", profile , "Accounts", "Avatar Images", "*"))
+        return (found or [None])[0]
+
+    def read_chrome_preference(self, file):
+        prefs = json.load(open(file,))
+        return (prefs['profile']['name'], file.split("/")[-2])
+
+    def is_chrome(self, browser):
+        return browser.get_display_name() == "Google Chrome"
+
+    def add_launcher(self, url, browser, display_name, hbox, profile=None):
+        if(self.is_saved_action(url,browser,profile)):
+            self.launch_browser(None, browser, url, profile)
+
+        icon = self.get_icon(browser, profile)
+        label= Gtk.Label.new(display_name)
+        label.set_max_width_chars(10)
+        label.set_width_chars(10)
+        label.set_line_wrap(True)
+        label.set_ellipsize(Pango.EllipsizeMode.END)
+        label.set_justify(Gtk.Justification.LEFT)
+
+        #Every button has a vertical Gtk.Box inside
+        vbox = Gtk.Box()
+        vbox.set_orientation(Gtk.Orientation.VERTICAL)
+        vbox.set_spacing(0)
+
+        vbox.pack_start(icon,True, True, 0)
+        vbox.pack_start(label,True, True, 0)
+
+        button = Gtk.Button()
+
+        button.add(vbox)
+
+        hbox.pack_end(button, True, True, 0)
+        #Connect the click signal, passing on all relevant data(browser and url)
+        button.connect("clicked", self.launch_browser, browser, url, profile)
+        return button
+
+    @property
+    def app_id(self):
+        return Gio.Application.get_application_id(self.thisapp) + '.desktop'
+
+    def is_braus(self, browser):
+        return self.app_id == browser.get_id() 
+
+    def is_default_already(self):
+        default = Gio.AppInfo.get_default_for_type(self.thisapp.content_types[1], True)
+        print(str(default))
+        return self.is_braus(default)
+
+    def get_icon(self, browser, profile):
+
+        #Get the icon and label, and put them in a button
+        try:
+            icon = Gtk.Image.new_from_gicon(browser.get_icon(), Gtk.IconSize.DIALOG)
+        except:
+            icon = Gtk.Image.new_from_icon_name('applications-internet', Gtk.IconSize.DIALOG)
+
+        file = self.chrome_profile_image_filename(profile)
+        if(file != None): 
+            pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(
+                filename=file, 
+                width=48, 
+                height=48, 
+                preserve_aspect_ratio=True)
+            print("Image file: %s" % file)
+            icon = Gtk.Image.new_from_pixbuf(pixbuf)
+
+        icon.set_name("browsericon")
+        return icon
 
     # Function to actually launch the browser
-    def launch_browser(self, button, browser, uris, app):
+    def launch_browser(self, button, browser, url, profile):
+        uris = [self.mapped_url(url)]
+        if(profile != None):
+            uris.append("--profile-directory="+profile)
+
         browser.launch_uris(uris)
         print("Opening " + browser.get_display_name())
-        self.quitApp(self,app)
+        self.quitApp(self,self.thisapp)
 
     # Quit app action
     def quitApp(self, *args):
@@ -263,7 +338,7 @@ class BrausWindow(Gtk.ApplicationWindow):
 
     def on_infobar_response(self, infobar, response_id, app):
         infobar.hide()
-        appinfo = Gio.DesktopAppInfo.new(Gio.Application.get_application_id(app) + '.desktop')
+        appinfo = Gio.DesktopAppInfo.new(self.app_id)
 
         if response_id == Gtk.ResponseType.ACCEPT:
             #set as default
@@ -278,4 +353,66 @@ class BrausWindow(Gtk.ApplicationWindow):
         elif response_id == Gtk.ResponseType.REJECT:
             #don't ask again
             app.settings.set_boolean("ask-default", False)
-    
+
+    def getConfigFile(self):
+        try:
+            from gi.repository import GLib
+            configdirs = [GLib.get_user_config_dir()] + GLib.get_system_config_dirs()
+            for configdir in configdirs:
+                config = os.path.join(configdir, 'braus', 'braus.ini')
+                print("Looking for configuration file %s" % config)
+                if os.path.exists(config):
+                    break
+            assert(os.path.exists(config))
+        except:
+            try:
+                config = os.path.join(os.environ['XDG_CONFIG_HOME'], 'braus', 'braus.ini');
+                print("Looking for configuration file %s" % config)
+                assert(os.path.exists(config));
+            except:
+                try:
+                    config = os.path.join(os.environ['HOME'], '.config', 'braus', 'braus.ini')
+                    print("Looking for configuration file %s" % config)
+                    assert(os.path.exists(config));
+                except:
+                    try:
+                        config = os.path.join(os.environ['HOME'], '.brausrc')
+                        print("Looking for configuration file %s" % config)
+                        assert(os.path.exists(config))
+                    except:
+                        config = 'braus.ini'
+                        print("Looking for configuration file %s" % config)
+
+        if os.access(config, os.R_OK):
+            print("Using configuration file %s" % config)
+        else:
+            raise Exception('Configuration file doesn\'t exist or is not readable')
+
+        return config
+
+    def loadConfig(self, config):
+        if config is None:
+            config = self.getConfigFile()
+            print(f"Loading Config: {config}")
+        
+        self.config = configparser.ConfigParser()
+        self.config.read([config])
+
+    def _getValue(self, url, default=None):
+        if self.config is None:
+            raise Exception('Configuration has not been loaded.')
+        try:
+            return self.config[url]
+        except configparser.Error:
+            return default
+        except KeyError:
+            return default
+
+    def _updateConfig(self, url, value):
+        file = self.getConfigFile()
+        self.loadConfig(file)
+
+        self.config[url] = value
+
+        with open(file, 'w') as configfile:
+            self.config.write(configfile)
