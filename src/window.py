@@ -280,7 +280,7 @@ class BrausWindow(Gtk.ApplicationWindow):
 
         hbox.pack_end(button, True, True, 0)
         #Connect the click signal, passing on all relevant data(browser and url)
-        button.connect("clicked", self.launch_browser, browser, url, profile)
+        button.connect("clicked", self.update_config_and_launch, browser, url, profile)
         return button
 
     @property
@@ -316,12 +316,19 @@ class BrausWindow(Gtk.ApplicationWindow):
         icon.set_name("browsericon")
         return icon
 
+    def update_config_and_launch(self, button, browser, url, profile):
+        self._updateConfig(url, browser, profile)
+        self.launch_browser(button, browser, url, profile)
+
     # Function to actually launch the browser
     def launch_browser(self, button, browser, url, profile):
         uris = [self.mapped_url(url)]
         if(profile != None):
             uris.append("--profile-directory="+profile)
 
+        if(self.is_chrome(browser)):
+            uris.append("--disable-infobars")
+            
         browser.launch_uris(uris)
         print("Opening " + browser.get_display_name())
         self.quitApp(self,self.thisapp)
@@ -386,9 +393,13 @@ class BrausWindow(Gtk.ApplicationWindow):
         if os.access(config, os.R_OK):
             print("Using configuration file %s" % config)
         else:
-            raise Exception('Configuration file doesn\'t exist or is not readable')
+            return None
+            ##raise Exception('Configuration file doesn\'t exist or is not readable')
 
         return config
+
+    def default_config_file(self):
+        return os.path.join(os.environ['HOME'], '.brausrc')
 
     def loadConfig(self, config):
         if config is None:
@@ -396,7 +407,8 @@ class BrausWindow(Gtk.ApplicationWindow):
             print(f"Loading Config: {config}")
         
         self.config = configparser.ConfigParser()
-        self.config.read([config])
+        if(config is not None):
+            self.config.read([config])
 
     def _getValue(self, url, default=None):
         if self.config is None:
@@ -408,11 +420,18 @@ class BrausWindow(Gtk.ApplicationWindow):
         except KeyError:
             return default
 
-    def _updateConfig(self, url, value):
+    def _updateConfig(self, url, browser, profile):
         file = self.getConfigFile()
         self.loadConfig(file)
 
-        self.config[url] = value
+        domain = urlparse(url).netloc
+        
+        if( not self.config.has_section(domain)):
+            self.config.add_section(domain)
 
-        with open(file, 'w') as configfile:
+        self.config.set(domain, "browserId", browser.get_id())
+        if(profile != None): 
+            self.config.set(domain, "profile", profile)
+
+        with open(file or self.default_config_file(), 'w') as configfile:
             self.config.write(configfile)
