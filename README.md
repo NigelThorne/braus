@@ -1,6 +1,16 @@
 
 
-## NOTES: -- Nigel here... I updated this to have a config file and to show chrome profiles too :)  
+## NOTES: -- Nigel here... 
+I change this awesome tool to make it match my needs.. 
+* show chrome profiles. (in linux only .. sorry)
+* remember your choice and automatically pick it for that domain from now on. 
+
+I also added an odd idea
+* if you edit the config and add "redirect=www.nigelthorne.com" to a domain... then it will launch the redirected domain instead. 
+not sure if this will be useful. 
+
+------------
+
 
 ## Braus
 A small application to select a browser every time you click a link anywhere. This is especially useful if you have multiple browsers or profiles, and you want to be able to open certain links in certain browsers. Very useful for web developers, but also for a lot of other people.
