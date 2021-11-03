@@ -1,13 +1,17 @@
+## NOTES: -- Hi Nigel here... 
 
-
-## NOTES: -- Nigel here... 
 I change this awesome tool to make it match my needs.. 
-* show chrome profiles. (in linux only .. sorry)
-* remember your choice and automatically pick it for that domain from now on. 
+My use case it that I have multiple Chrome profiles, one for work and one for home. 
+When clicking links, in slack for example, I keep getting the wrong browser opening. 
+
+I have therefore added the following abilities: 
+* Allow you to pick a specific chrome profile you want to open the link in. (in linux only .. sorry)
+* Open in that browser just once, or always automatically from now on.
 
 I also added an odd idea
-* if you edit the config and add "redirect=www.nigelthorne.com" to a domain... then it will launch the redirected domain instead. 
-not sure if this will be useful. 
+* If you edit the config (~/.brausrc) and add "redirect=www.somedomain.com" to a domain... then it will launch the redirected domain instead of the one you clicked.  I'm not sure if this will be useful. 
+
+
 
 ------------
 
