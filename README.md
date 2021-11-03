@@ -13,6 +13,7 @@ A small application to select a browser every time you click a link anywhere. Th
 
 GNU/Linux alternative to apps such as Choosy/Browserchooser
 
+
 A package is available for Archlinux [in the AUR](https://aur.archlinux.org/packages/braus-git/)
 
 If you wish to package the app for your distro, please open an issue and we'll work on it together.

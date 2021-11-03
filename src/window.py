@@ -29,8 +29,16 @@ class BrausWindow(Gtk.ApplicationWindow):
     def __init__(self, app):
         super().__init__(title="Braus", application=app)
         
+
         self.thisapp = app
         self.loadConfig(None)
+        try:
+            self.url = sys.argv[1]
+            print("Url %s" % self.url)
+            self.rememberChoice = self.get_setting_value(self.url, 'keepasking', 'false').lower() != 'true'
+        except IndexError:
+            print("No url provided")
+            self.rememberChoice = True
 
         # Set it to open in center
         self.set_position(Gtk.WindowPosition.CENTER_ALWAYS)
@@ -171,24 +179,11 @@ class BrausWindow(Gtk.ApplicationWindow):
         hbox.set_homogeneous(True)
 
         outerbox.add(hbox)
+        outerbox.add(self.add_alwaysbar())
 
-        # Create an infobar to help the user set Braus as default
-        infobar = Gtk.InfoBar()
-        infobar.set_message_type(Gtk.MessageType.QUESTION)
-        infobar.set_show_close_button(True)
-        infobar.connect("response", self.on_infobar_response, app)
-
-        infolabel = Gtk.Label("Set Braus as your default browser")
-        content = infobar.get_content_area()
-        content.add(infolabel)
-
-        infobuttonnever = Gtk.Button.new_with_label(_("Never ask again"))
-        Gtk.StyleContext.add_class(infobuttonnever.get_style_context(), Gtk.STYLE_CLASS_FLAT)
-        
-        infobar.add_action_widget(infobuttonnever, Gtk.ResponseType.REJECT)
-        infobar.add_button (_("Set as Default"), Gtk.ResponseType.ACCEPT)
                 
         if (app.settings.get_boolean("ask-default") != False) and (self.is_default_already() == False) :
+            infobar = self.add_infobar(app)
             outerbox.add(infobar)
 
         # Get all apps which are registered as browsers
@@ -213,6 +208,55 @@ class BrausWindow(Gtk.ApplicationWindow):
                 for (name, profile) in self.list_chrome_profiles():
                     self.add_launcher(url, browser, name, hbox, profile)
 
+    def add_alwaysbar(self):
+        alwaysbar = Gtk.Box()
+        alwaysbar.set_orientation(Gtk.Orientation.HORIZONTAL)
+        alwaysbar.set_spacing(10)
+
+        #alwaysbar.set_show_close_button(True)
+        # alwaysbar.connect("response", self.on_infobar_response, app)
+
+        alwaysLabel = Gtk.Label("---")
+        self.set_remember_choice(None, self.rememberChoice, alwaysLabel)
+
+        # content = alwaysbar.get_content_area()
+        alwaysbar.add(alwaysLabel)
+
+        onceButton = Gtk.Button.new_with_label(_("Once"))
+        onceButton.connect("clicked", self.set_remember_choice, False, alwaysLabel)
+        alwaysbar.add(onceButton)
+        
+        alwaysButton = Gtk.Button.new_with_label(_("Always"))
+        alwaysButton.connect("clicked", self.set_remember_choice, True, alwaysLabel)
+        alwaysbar.add(alwaysButton)
+
+        return alwaysbar
+
+    def set_remember_choice(self, button, value, label):
+        if(value == True):
+            label.set_label("Remember this answer. ")
+        else:
+            label.set_label("Ask again next time.  ")
+        self.rememberChoice = value
+
+    def add_infobar(self, app):
+        # Create an infobar to help the user set Braus as default
+        infobar = Gtk.InfoBar()
+        infobar.set_message_type(Gtk.MessageType.QUESTION)
+        infobar.set_show_close_button(True)
+        infobar.connect("response", self.on_infobar_response, app)
+
+        infolabel = Gtk.Label("Set Braus as your default browser")
+        content = infobar.get_content_area()
+        content.add(infolabel)
+
+        infobuttonnever = Gtk.Button.new_with_label(_("Never ask again"))
+        Gtk.StyleContext.add_class(infobuttonnever.get_style_context(), Gtk.STYLE_CLASS_FLAT)
+        
+        infobar.add_action_widget(infobuttonnever, Gtk.ResponseType.REJECT)
+        infobar.add_button (_("Set as Default"), Gtk.ResponseType.ACCEPT)
+        return infobar
+
     def mapped_url(self, url):
         domain = urlparse(url).netloc
         setting = self._getValue(domain)
@@ -223,12 +267,25 @@ class BrausWindow(Gtk.ApplicationWindow):
         return url
 
     def is_saved_action(self, url, browser, profile):
-        domain = urlparse(url).netloc
-        setting = self._getValue(domain)
+        setting = self.get_setting(url)
         if(setting == None): 
             return False
+        if(setting.get('keepasking', '').lower() == 'true'):
+            return False    
         return setting.get('profile',None) == profile and \
                 setting['browserId'] == browser.get_id()
+
+    def get_setting_value(self, url, key, default):
+        domain = urlparse(url).netloc
+        setting = self._getValue(domain)
+        if(setting is None): return default
+        return setting.get(key, default)
+
+
+    def get_setting(self, url):
+        domain = urlparse(url).netloc
+        return self._getValue(domain)
+
 
     # linux only
     def list_chrome_profiles(self):
@@ -317,7 +374,10 @@ class BrausWindow(Gtk.ApplicationWindow):
         return icon
 
     def update_config_and_launch(self, button, browser, url, profile):
-        self._updateConfig(url, browser, profile)
+        if(self.rememberChoice == True):
+            self._updateConfig(url, browser, profile)
+        else:
+            self._updateConfigToKeepAsking(url)
         self.launch_browser(button, browser, url, profile)
 
     # Function to actually launch the browser
@@ -420,6 +480,21 @@ class BrausWindow(Gtk.ApplicationWindow):
         except KeyError:
             return default
 
+
+    def _updateConfigToKeepAsking(self, url):
+        file = self.getConfigFile()
+        self.loadConfig(file)
+
+        domain = urlparse(url).netloc
+        
+        if( not self.config.has_section(domain)):
+            self.config.add_section(domain)
+
+        self.config.set(domain, "keepasking", "true")
+
+        with open(file or self.default_config_file(), 'w') as configfile:
+            self.config.write(configfile)
+
     def _updateConfig(self, url, browser, profile):
         file = self.getConfigFile()
         self.loadConfig(file)
@@ -428,6 +503,9 @@ class BrausWindow(Gtk.ApplicationWindow):
         
         if( not self.config.has_section(domain)):
             self.config.add_section(domain)
+
+        if( self.config.has_option(domain, 'keepasking')):
+            self.config.remove_option(domain,'keepasking')
 
         self.config.set(domain, "browserId", browser.get_id())
         if(profile != None): 
