@@ -11,6 +11,22 @@ I have therefore added the following abilities:
 I also added an odd idea
 * If you edit the config (~/.brausrc) and add "redirect=www.somedomain.com" to a domain... then it will launch the redirected domain instead of the one you clicked.  I'm not sure if this will be useful. 
 
+On Ubuntu I run AutoKey with this script ...
+```
+import subprocess
+import time
+
+keyboard.send_keys("<ctrl>+l")
+time.sleep(0.5)
+keyboard.send_keys("<ctrl>+c")
+time.sleep(0.5)
+text = clipboard.get_selection()
+
+subprocess.Popen(["braus", text])
+```
+This means if I click a link in an open browser and end up with the url open in the wrong account I can hit a key combination and have braus open it in the correct browser.
+
+
 
 
 ------------
